@@ -31,7 +31,11 @@ class Pipeline:
         sensor_names = [s["name"] for s in cfg["sensors"]]
         actuator_names = [a["name"] for a in cfg["actuators"]]
         self.ingestion = Ingestion(cfg["sensors"], self._on_sample)
-        self.inference = InferenceService(load_model(cfg["inference"], sensor_names, actuator_names))
+        self.inference = InferenceService(load_model(
+            cfg["inference"], sensor_names, actuator_names, base_dir=cfg.get("_base_dir"),
+        ))
+        if self.window.maxlen < self.inference.model.window_size:
+            raise ValueError("backend.window_size must cover the model's window_size")
         self.node = MqttNode("backend", cfg["mqtt"]["host"], cfg["mqtt"]["port"],
                              availability_topic=topics.availability(self.site, "backend"), node_id="backend")
         self.decision = DecisionEngine(cfg, self._publish_command, emit, db)
@@ -47,6 +51,8 @@ class Pipeline:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._ticker.is_alive():
+            self._ticker.join()
         self.node.stop()
 
     # --- MQTT in -----------------------------------------------------------------------------------
@@ -71,12 +77,16 @@ class Pipeline:
         self.window.append(sample)
         self.latest_sample = sample.to_dict()
         self.emit("sample", self.latest_sample)
+        # Safety uses every cleaned sample, even when model inference fails.
+        self.decision.on_sample(sample)
         prediction = self.inference.run(list(self.window))
         if prediction is None:
+            self.latest_prediction = None
+            self.emit("prediction", None)
             return
         self.db.insert_prediction(sample_id, sample.ts, prediction)
         self.latest_prediction = {"ts": sample.ts, "model": prediction.model, "outputs": prediction.outputs,
-                                  "scores": prediction.scores}
+                                  "scores": prediction.scores, "details": prediction.details}
         self.emit("prediction", self.latest_prediction)
         self.decision.on_prediction(sample, prediction)
 

@@ -58,6 +58,11 @@
 </header>
 <main>
   <section><h2>Sensors</h2><div class="grid" id="sensors"></div></section>
+  <section><h2>Model prediction</h2><div class="card">
+    <div class="label" id="prediction-meta">Waiting for inference</div>
+    <div class="flag" id="prediction-warning"></div>
+    <div class="grid" id="prediction"></div>
+  </div></section>
   <section><h2>Actuators</h2><div class="err" id="err"></div><div class="grid acts" id="actuators"></div></section>
   <section><h2>Recent commands</h2><div class="card scroll"><table>
     <thead><tr><th>Sim time</th><th>Actuator</th><th>State</th><th>Source</th><th>Reason</th><th>ACK</th></tr></thead>
@@ -130,6 +135,27 @@ function renderNodes(nodes) {
   $("nodes").innerHTML = Object.entries(nodes).map(([n, s]) => `<span><span class="dot ${s === "online" ? "up" : ""}"></span>${esc(n)}</span>`).join(" ");
 }
 
+function renderPrediction(p) {
+  $("prediction").innerHTML = "";
+  $("prediction-warning").textContent = "";
+  if (!p) {
+    $("prediction-meta").textContent = "No current prediction";
+    return;
+  }
+  const d = p.details || {};
+  const latency = Number.isFinite(d.inference_ms) ? ` · ${d.inference_ms.toFixed(3)} ms` : "";
+  $("prediction-meta").textContent = `${p.model} · ${p.ts.replace("T", " ")}${latency}`;
+  if (d.data_status === "out_of_training_range") {
+    $("prediction-warning").textContent = "Outside training range: " + (d.out_of_range_features || []).join(", ");
+  }
+  $("prediction").innerHTML = Object.entries(p.outputs).map(([a, state]) => {
+    const score = p.scores?.[a];
+    return `<div><span class="label">${esc(meta.labels[a] || a)}</span>
+      <div><span class="state ${esc(state)}">${esc(state)}</span>
+      ${Number.isFinite(score) ? ` · ON score ${score.toFixed(3)}` : ""}</div></div>`;
+  }).join("");
+}
+
 document.addEventListener("click", async e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   $("err").textContent = "";
@@ -145,6 +171,7 @@ function applySnapshot(s) {
   meta = {sensors: s.sensors, labels: s.actuator_labels};
   $("model").textContent = "model: " + s.model;
   acts = s.actuators; buildSensors(); renderActuators(); renderNodes(s.nodes);
+  renderPrediction(s.prediction);
   if (s.sample) { history.push(s.sample); renderSample(s.sample); }
 }
 
@@ -164,6 +191,7 @@ function connect() {
     const {type, data} = JSON.parse(ev.data);
     if (type === "snapshot") applySnapshot(data);
     else if (type === "sample") { history.push(data); history = history.slice(-HISTORY); renderSample(data); }
+    else if (type === "prediction") renderPrediction(data);
     else if (type === "actuator") {
       acts[data.name] = data; renderActuators();
       if (data.confirmed) loadAcks();

@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import resolve_path
 from .db import Database
@@ -22,7 +22,7 @@ STATIC = Path(__file__).resolve().parent.parent / "client" / "static"
 class OverrideRequest(BaseModel):
     actuator: str
     state: Literal["ON", "OFF"]
-    ttl_s: float | None = None   # default: decision.override_ttl_s
+    ttl_s: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class Hub:
@@ -46,13 +46,19 @@ def create_app(cfg: dict) -> FastAPI:
     async def lifespan(app: FastAPI):
         loop = asyncio.get_running_loop()
         db = Database(resolve_path(cfg, cfg["backend"]["db_path"]))
-        # Pipeline callbacks run on paho/ticker threads, so hand events to the event loop thread-safely.
-        pipeline = Pipeline(cfg, db, emit=lambda t, d: loop.call_soon_threadsafe(hub.broadcast, {"type": t, "data": d}))
-        app.state.db, app.state.pipeline = db, pipeline
-        pipeline.start()
-        yield
-        pipeline.stop()
-        db.close()
+        try:
+            # Pipeline callbacks hand events from paho/ticker threads to the event loop.
+            pipeline = Pipeline(cfg, db, emit=lambda t, d: loop.call_soon_threadsafe(
+                hub.broadcast, {"type": t, "data": d},
+            ))
+            app.state.db, app.state.pipeline = db, pipeline
+            try:
+                pipeline.start()
+                yield
+            finally:
+                pipeline.stop()
+        finally:
+            db.close()
 
     app = FastAPI(title="IoT Agriculture Platform", lifespan=lifespan)
 

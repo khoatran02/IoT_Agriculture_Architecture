@@ -1,0 +1,338 @@
+{
+  "source": "AIoT-AI-models/artifacts/mlp_v1/predictions_validation.csv",
+  "samples": [
+    {
+      "source_row_id": 1798,
+      "sensors": {
+        "temperature": 31.0,
+        "humidity": 46.0,
+        "water_level": 0.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "OFF",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 1.0,
+            "irrigation_pump": 0.12526875734329224,
+            "water_pump": 1.0
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "OFF",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 0.99609375,
+            "irrigation_pump": 0.05859375,
+            "water_pump": 0.99609375
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 8625,
+      "sensors": {
+        "temperature": 26.0,
+        "humidity": 39.0,
+        "water_level": 6.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "ON",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 1.0,
+            "irrigation_pump": 0.9999910593032837,
+            "water_pump": 1.0
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "ON",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 0.99609375,
+            "irrigation_pump": 0.99609375,
+            "water_pump": 0.99609375
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 8627,
+      "sensors": {
+        "temperature": 26.0,
+        "humidity": 47.0,
+        "water_level": 100.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "OFF",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 1.0,
+            "irrigation_pump": 0.034245286136865616,
+            "water_pump": 1.1439287525853627e-14
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "OFF",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 0.99609375,
+            "irrigation_pump": 0.03125,
+            "water_pump": 0.0
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 11407,
+      "sensors": {
+        "temperature": 23.0,
+        "humidity": 43.0,
+        "water_level": 100.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "ON",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 0.9996890425682068,
+            "irrigation_pump": 0.9995121359825134,
+            "water_pump": 1.210490041536616e-14
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "ON",
+            "irrigation_pump": "ON",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 0.99609375,
+            "irrigation_pump": 0.99609375,
+            "water_pump": 0.0
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 12531,
+      "sensors": {
+        "temperature": 22.0,
+        "humidity": 35.0,
+        "water_level": 0.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "ON",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 0.08738848567008972,
+            "irrigation_pump": 1.0,
+            "water_pump": 1.0
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "ON",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 0.05859375,
+            "irrigation_pump": 0.99609375,
+            "water_pump": 0.99609375
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 20626,
+      "sensors": {
+        "temperature": 16.0,
+        "humidity": 39.0,
+        "water_level": 100.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "ON",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 1.9354563084324466e-15,
+            "irrigation_pump": 0.9999929666519165,
+            "water_pump": 3.4770024858431225e-14
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "ON",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 0.0,
+            "irrigation_pump": 0.99609375,
+            "water_pump": 0.0
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 28699,
+      "sensors": {
+        "temperature": 13.0,
+        "humidity": 78.0,
+        "water_level": 0.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "OFF",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 3.2655864758827844e-26,
+            "irrigation_pump": 1.8223594105238683e-15,
+            "water_pump": 1.0
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "OFF",
+            "water_pump": "ON"
+          },
+          "scores": {
+            "fan": 0.0,
+            "irrigation_pump": 0.0,
+            "water_pump": 0.99609375
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 28701,
+      "sensors": {
+        "temperature": 13.0,
+        "humidity": 77.0,
+        "water_level": 100.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "OFF",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 2.7703933555253433e-23,
+            "irrigation_pump": 1.1162872511319053e-15,
+            "water_pump": 1.1808417091363488e-11
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "OFF",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 0.0,
+            "irrigation_pump": 0.0,
+            "water_pump": 0.0
+          }
+        }
+      }
+    },
+    {
+      "source_row_id": 35465,
+      "sensors": {
+        "temperature": 10.0,
+        "humidity": 61.0,
+        "water_level": 71.0,
+        "N": 255.0,
+        "P": 255.0,
+        "K": 255.0
+      },
+      "variants": {
+        "fp32": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "OFF",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 8.116412860857101e-28,
+            "irrigation_pump": 1.0075173659772341e-13,
+            "water_pump": 0.7365106344223022
+          }
+        },
+        "int8": {
+          "outputs": {
+            "fan": "OFF",
+            "irrigation_pump": "OFF",
+            "water_pump": "OFF"
+          },
+          "scores": {
+            "fan": 0.0,
+            "irrigation_pump": 0.0,
+            "water_pump": 0.6640625
+          }
+        }
+      }
+    }
+  ]
+}

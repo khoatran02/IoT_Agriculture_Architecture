@@ -10,8 +10,16 @@ SENSORS = ["temperature", "humidity", "water_level", "N", "P", "K"]
 ACTS = ["fan", "irrigation_pump", "water_pump"]
 
 
+def threshold_model():
+    return load_model({"model": "threshold", "params": {
+        "fan": {"on_at": 24.0, "off_below": 22.0},
+        "irrigation_pump": {"on_below": 45.0, "off_at": 50.0},
+        "water_pump": {"on_below": 65.0, "off_at": 70.0},
+    }}, SENSORS, ACTS)
+
+
 def test_threshold_model_follows_the_rules(cfg):
-    m = load_model(cfg["inference"], SENSORS, ACTS)
+    m = threshold_model()
     out = m.predict([make_sample(temperature=30, humidity=30, water_level=40)]).outputs
     assert out == {"fan": "ON", "irrigation_pump": "ON", "water_pump": "ON"}
     out = m.predict([make_sample(temperature=15, humidity=70, water_level=100)]).outputs
@@ -19,7 +27,7 @@ def test_threshold_model_follows_the_rules(cfg):
 
 
 def test_threshold_model_has_hysteresis(cfg):
-    m = load_model(cfg["inference"], SENSORS, ACTS)
+    m = threshold_model()
     m.predict([make_sample(water_level=40)])
     assert m.predict([make_sample(water_level=67)]).outputs["water_pump"] == "ON"    # between on_below and off_at
     assert m.predict([make_sample(water_level=72)]).outputs["water_pump"] == "OFF"

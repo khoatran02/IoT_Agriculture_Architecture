@@ -1,4 +1,9 @@
 paho-mqtt>=2.0
+# Standalone inference runtime (Python 3.11); no training repository is required.
+numpy==2.2.6
+ai-edge-litert==2.3.0
+# LiteRT's newer backport dependency excludes Python >=3.11.
+backports-strenum==1.2.8
 fastapi>=0.110
 uvicorn>=0.27
 websockets>=12

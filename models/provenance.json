@@ -1,0 +1,14 @@
+{
+  "source_project": "AIoT-AI-models",
+  "source_revision": "d5ccccaec31ec5a64629ff95915070e5e8615206",
+  "runtime": {
+    "source_file": "aiot_ai/runtime.py",
+    "local_file": "iot_agri/backend/models/mlp_runtime.py",
+    "scope": "Inference-only snapshot; training and benchmark code omitted; JSON helpers and schema constants included locally."
+  },
+  "dataset": {
+    "file": "datasets/IoTProcessed_Data.csv"
+  },
+  "model_bundle": "models/mlp_v1/model_metadata.json",
+  "policy": "All deployment files are local snapshots. No source checkout or aiot_ai package is required at installation or runtime."
+}

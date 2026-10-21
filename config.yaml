@@ -9,7 +9,7 @@ mqtt:
 
 dataset:
   # Relative paths resolve against this file's directory.
-  path: ../datasets/iot-agriculture-2024/IoTProcessed_Data.csv
+  path: datasets/IoTProcessed_Data.csv
 
 # --- 1. Device layer: every sensor column of the CSV is simulated as its own sensor -------------
 sensors:
@@ -42,16 +42,15 @@ backend:
   host: 0.0.0.0
   port: 8000
   db_path: data/agri.db
-  window_size: 12      # samples (= 1 simulated hour) handed to the inference model
+  window_size: 1       # MLP 6–16–8–3 uses the latest sample, no temporal window
 
 inference:
-  # "threshold" = rule-based stand-in. To plug in the DL model, point this at "package.module:ClassName"
-  # (see iot_agri/backend/models/dl_template.py); `params` are passed to its constructor.
-  model: threshold
+  # Uses the bundled inference runtime and artifacts; no external model repo or TensorFlow needed.
+  model: iot_agri.backend.models.aiot_mlp:AIoTMLP
   params:
-    fan:             {on_at: 24.0, off_below: 22.0}   # temperature (°C)
-    irrigation_pump: {on_below: 45.0, off_at: 50.0}   # humidity (%)
-    water_pump:      {on_below: 65.0, off_at: 70.0}   # water level (%)
+    model_dir: models/mlp_v1  # relative to this config file
+    variant: int8            # int8 or fp32, from the same checkpoint
+    threads: 1
 
 decision:
   min_dwell_minutes: 10     # simulated minutes an actuator must hold a state before auto mode flips it

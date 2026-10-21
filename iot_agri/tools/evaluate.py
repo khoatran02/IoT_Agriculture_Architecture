@@ -17,12 +17,16 @@ def evaluate(cfg: dict) -> dict[str, dict]:
     actuators = cfg["actuators"]
     cols = {s["name"]: ds.column(s["column"]) for s in cfg["sensors"]}
     labels = {a["name"]: ds.column(a["dataset_column"]) for a in actuators}
-    service = InferenceService(load_model(cfg["inference"], sensor_names, [a["name"] for a in actuators]))
+    service = InferenceService(load_model(
+        cfg["inference"], sensor_names, [a["name"] for a in actuators], base_dir=cfg.get("_base_dir"),
+    ))
     window = deque(maxlen=cfg["backend"]["window_size"])
     counts = {a: [0, 0, 0, 0] for a in labels}   # [actual ON right, actual ON wrong, actual OFF right, actual OFF wrong]
     for i, ts in enumerate(ds.timestamps):
         window.append(Sample(i, ts, "offline", {n: cols[n][i] for n in sensor_names}, {}))
         pred = service.run(list(window))
+        if pred is None:
+            raise RuntimeError(f"Model failed at dataset row {i}; evaluation aborted")
         for name, truth in labels.items():
             predicted_on, actual_on = pred.outputs[name] == "ON", truth[i] == 1.0
             counts[name][(0 if actual_on else 2) + (0 if predicted_on == actual_on else 1)] += 1

@@ -106,3 +106,22 @@ def test_unacked_command_is_resent_then_ack_stops_it(h):
 def test_unknown_actuator(h):
     with pytest.raises(KeyError):
         h.engine.override("sprinkler", "ON")
+
+
+def test_interlock_bypasses_dwell_even_when_model_also_requests_off(h):
+    h.predict(0, irrigation_pump="ON")
+    h.predict(5, irrigation_pump="OFF", sensors={"water_level": 3})
+    assert h.cmds("irrigation_pump")[-1] == ("OFF", "auto")
+
+
+def test_interlock_trips_without_a_prediction(h):
+    h.predict(0, irrigation_pump="ON")
+    h.engine.override("irrigation_pump", "ON")
+    h.engine.on_sample(make_sample(water_level=3))
+    assert h.cmds("irrigation_pump")[-1] == ("OFF", "auto")
+    assert h.engine.actuators["irrigation_pump"].mode == "auto"
+
+
+def test_manual_off_allowed_while_dry_run_interlock_active(h):
+    h.predict(0, sensors={"water_level": 3})
+    assert h.engine.override("irrigation_pump", "OFF")["desired"] == "OFF"

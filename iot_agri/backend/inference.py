@@ -7,6 +7,7 @@ import importlib
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 
 from .ingestion import Sample
 
@@ -18,6 +19,7 @@ class Prediction:
     model: str
     outputs: dict[str, str]                  # actuator name -> "ON" | "OFF"
     scores: dict[str, float] | None = None   # optional P(ON) per actuator, shown on the dashboard
+    details: dict | None = None             # model version, OOD flags and inference latency
 
     @classmethod
     def from_scores(cls, model: str, scores: dict[str, float], threshold: float = 0.5) -> "Prediction":
@@ -63,8 +65,14 @@ class ThresholdModel(InferenceModel):
         return Prediction(self.name, dict(self._state))
 
 
-def load_model(inference_cfg: dict, sensor_names: list[str], actuator_names: list[str]) -> InferenceModel:
-    kind, params = inference_cfg.get("model", "threshold"), inference_cfg.get("params") or {}
+def load_model(inference_cfg: dict, sensor_names: list[str], actuator_names: list[str],
+               base_dir: str | Path | None = None) -> InferenceModel:
+    kind = inference_cfg.get("model", "threshold")
+    params = dict(inference_cfg.get("params") or {})
+    # Resolve artifact paths against config.yaml, independent of the process's cwd.
+    for key in ("model_dir", "weights_path"):
+        if base_dir is not None and params.get(key) is not None:
+            params[key] = str((Path(base_dir) / params[key]).resolve())
     if kind == "threshold":
         return ThresholdModel(sensor_names, actuator_names, **params)
     module_name, _, class_name = kind.partition(":")   # "package.module:ClassName"
@@ -77,6 +85,8 @@ class InferenceService:
         self.model = model
 
     def run(self, window: list[Sample]) -> Prediction | None:
+        if not window:
+            return None
         need = self.model.window_size
         if len(window) < need:
             window = [window[0]] * (need - len(window)) + window

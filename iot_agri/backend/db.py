@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS samples(
     values_json TEXT, quality_json TEXT);
 CREATE TABLE IF NOT EXISTS predictions(
     id INTEGER PRIMARY KEY AUTOINCREMENT, sample_id INTEGER, ts TEXT, model TEXT,
-    outputs_json TEXT, scores_json TEXT);
+    outputs_json TEXT, scores_json TEXT, details_json TEXT);
 CREATE TABLE IF NOT EXISTS commands(
     id INTEGER PRIMARY KEY AUTOINCREMENT, cmd_id TEXT UNIQUE, sent_at REAL, sim_ts TEXT, actuator TEXT,
     state TEXT, source TEXT, reason TEXT, acked_at REAL, ack_state TEXT);
@@ -29,6 +29,11 @@ class Database:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(SCHEMA)
+        # Keep existing replay databases usable after adding inference diagnostics.
+        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(predictions)")}
+        if "details_json" not in columns:
+            self._db.execute("ALTER TABLE predictions ADD COLUMN details_json TEXT")
+            self._db.commit()
 
     def _write(self, sql: str, args=()) -> int:
         with self._lock:
@@ -49,8 +54,10 @@ class Database:
                            (s.ts, s.seq, s.gateway, s.recv_at, json.dumps(s.values), json.dumps(s.quality)))
 
     def insert_prediction(self, sample_id: int, ts: str, p) -> int:
-        return self._write("INSERT INTO predictions(sample_id,ts,model,outputs_json,scores_json) VALUES(?,?,?,?,?)",
-                           (sample_id, ts, p.model, json.dumps(p.outputs), json.dumps(p.scores)))
+        return self._write("INSERT INTO predictions(sample_id,ts,model,outputs_json,scores_json,details_json) "
+                           "VALUES(?,?,?,?,?,?)",
+                           (sample_id, ts, p.model, json.dumps(p.outputs), json.dumps(p.scores),
+                            json.dumps(p.details)))
 
     def insert_command(self, c: dict) -> int:
         return self._write("INSERT INTO commands(cmd_id,sent_at,sim_ts,actuator,state,source,reason) "

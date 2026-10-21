@@ -46,16 +46,21 @@ class DecisionEngine:
         self.sim_ts: str | None = None
 
     # --- inputs ------------------------------------------------------------------------------------
-    def on_prediction(self, sample, prediction) -> None:
+    def on_sample(self, sample) -> None:
+        """Apply interlocks without depending on a successful model prediction."""
         self.latest_values, self.sim_ts = sample.values, sample.ts
         for name, st in self.actuators.items():
-            if st.mode == "manual":
-                # An interlock still wins over a standing override.
-                target, reason = self._interlock(name, st.desired)
-                if reason:
+            target, reason = self._interlock(name, st.desired)
+            if reason:
+                if st.mode == "manual":
                     st.mode, st.override_until = "auto", None
-                    self._emit("actuator", self._view(st))
-                    self._set_desired(st, target, "auto", reason)
+                self._set_desired(st, target, "auto", reason)
+                self._emit("actuator", self._view(st))
+
+    def on_prediction(self, sample, prediction) -> None:
+        self.on_sample(sample)
+        for name, st in self.actuators.items():
+            if st.mode == "manual":
                 continue
             proposed = prediction.outputs.get(name)
             if proposed is None:
@@ -80,7 +85,7 @@ class DecisionEngine:
     def override(self, name: str, state: str, ttl_s: float | None = None) -> dict:
         st = self._get(name)
         target, reason = self._interlock(name, state)
-        if reason:
+        if reason and target != state:
             raise OverrideBlocked(reason)
         st.mode = "manual"
         st.override_until = self._clock() + (self.override_ttl if ttl_s is None else ttl_s)
@@ -112,7 +117,7 @@ class DecisionEngine:
         return self.actuators[name]
 
     def _interlock(self, name: str, proposed: str | None) -> tuple[str | None, str | None]:
-        """Returns (state, reason). reason is set only when an interlock changed the proposal."""
+        """Return the forced state and reason whenever an interlock is active."""
         for rule in self.interlocks:
             if rule["actuator"] != name:
                 continue
@@ -121,7 +126,7 @@ class DecisionEngine:
                 continue
             below = "min" in rule and value < rule["min"]
             above = "max" in rule and value > rule["max"]
-            if (below or above) and proposed != rule["force"]:
+            if below or above:
                 return rule["force"], f"interlock: {rule['sensor']}={value:g} {'<' if below else '>'} " \
                                       f"{rule['min'] if below else rule['max']}"
         return proposed, None
