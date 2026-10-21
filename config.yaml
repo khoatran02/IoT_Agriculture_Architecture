@@ -1,0 +1,61 @@
+# Single config shared by every process (gateway, controller, backend).
+# Override the file with $AGRI_CONFIG or --config; override the broker with $MQTT_HOST / $MQTT_PORT.
+site: farm1
+
+mqtt:
+  host: localhost
+  port: 1883
+  qos: 1
+
+dataset:
+  # Relative paths resolve against this file's directory.
+  path: ../datasets/iot-agriculture-2024/IoTProcessed_Data.csv
+
+# --- 1. Device layer: every sensor column of the CSV is simulated as its own sensor -------------
+sensors:
+  - {name: temperature, column: tempreature, unit: "°C",    interface: I2C,  valid_range: [-10, 60]}
+  - {name: humidity,    column: humidity,    unit: "%",     interface: I2C,  valid_range: [0, 100]}
+  - {name: water_level, column: water_level, unit: "%",     interface: GPIO, valid_range: [0, 100]}
+  - {name: N,           column: N,           unit: "mg/kg", interface: UART, valid_range: [0, 300]}
+  - {name: P,           column: P,           unit: "mg/kg", interface: UART, valid_range: [0, 300]}
+  - {name: K,           column: K,           unit: "mg/kg", interface: UART, valid_range: [0, 300]}
+
+# dataset_column is the ground-truth ON/OFF label from the CSV (used only by tools/evaluate.py).
+actuators:
+  - {name: fan,              label: Fan,              gpio: 17, dataset_column: Fan_actuator_ON}
+  - {name: irrigation_pump,  label: Irrigation pump,  gpio: 27, dataset_column: Watering_plant_pump_ON}
+  - {name: water_pump,       label: Water pump,       gpio: 22, dataset_column: Water_pump_actuator_ON}
+
+# --- 2. Edge layer ---------------------------------------------------------------------------------
+gateway:
+  id: gw-01
+  interval_s: 1.0      # wall-clock seconds between samples (the CSV has one row per 5 simulated minutes)
+  loop: true           # restart from the first row when the CSV ends
+  dropout_prob: 0.0    # chance that a sensor fails to answer in a cycle (exercises ingestion cleaning)
+
+controller:
+  id: ctrl-01
+  actuation_delay_s: 0.2
+
+# --- 3. Platform layer -----------------------------------------------------------------------------
+backend:
+  host: 0.0.0.0
+  port: 8000
+  db_path: data/agri.db
+  window_size: 12      # samples (= 1 simulated hour) handed to the inference model
+
+inference:
+  # "threshold" = rule-based stand-in. To plug in the DL model, point this at "package.module:ClassName"
+  # (see iot_agri/backend/models/dl_template.py); `params` are passed to its constructor.
+  model: threshold
+  params:
+    fan:             {on_at: 24.0, off_below: 22.0}   # temperature (°C)
+    irrigation_pump: {on_below: 45.0, off_at: 50.0}   # humidity (%)
+    water_pump:      {on_below: 65.0, off_at: 70.0}   # water level (%)
+
+decision:
+  min_dwell_minutes: 10     # simulated minutes an actuator must hold a state before auto mode flips it
+  ack_timeout_s: 5          # resend a command if the controller has not confirmed it
+  override_ttl_s: 300       # manual overrides fall back to auto after this long
+  interlocks:               # safety rules that beat the model AND manual overrides
+    - {actuator: irrigation_pump, sensor: water_level, min: 10, force: "OFF", note: dry-run protection}
