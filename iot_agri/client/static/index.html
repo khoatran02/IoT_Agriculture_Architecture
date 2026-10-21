@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Farm Dashboard</title>
+<style>
+  :root {
+    --bg: #f5f6f4; --card: #fff; --ink: #1c2420; --muted: #66726b; --line: #dfe4df;
+    --on: #1a7f4b; --off: #8a948e; --warn: #b45309; --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131715; --card: #1c211e; --ink: #e8ece9; --muted: #8e9a93; --line: #2c342f;
+            --on: #4ade80; --off: #7a857e; --warn: #fbbf24; --accent: #60a5fa; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+  .meta { color: var(--muted); font-size: 13px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--off); margin-right: 5px; }
+  .dot.up { background: var(--on); }
+  main { padding: 16px; display: grid; gap: 16px; max-width: 1100px; margin: 0 auto; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .label { color: var(--muted); font-size: 13px; }
+  .value { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .value small { font-size: 13px; font-weight: 400; color: var(--muted); }
+  .flag { color: var(--warn); font-size: 12px; }
+  canvas { width: 100%; height: 36px; display: block; margin-top: 6px; }
+  .acts { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .state { font-weight: 700; }
+  .state.ON { color: var(--on); } .state.OFF { color: var(--off); }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .btns { display: flex; gap: 6px; margin-top: 10px; }
+  button { flex: 1; padding: 7px 0; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+           border-radius: 6px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.auto.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .reason { color: var(--muted); font-size: 12px; margin-top: 6px; min-height: 17px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
+  .err { color: var(--warn); font-size: 13px; min-height: 18px; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Farm Dashboard</h1>
+  <div class="meta">
+    <span><span class="dot" id="ws-dot"></span><span id="ws-text">connecting</span></span>
+    <span id="sim-time">no data yet</span>
+    <span id="model"></span>
+    <span id="nodes"></span>
+  </div>
+</header>
+<main>
+  <section><h2>Sensors</h2><div class="grid" id="sensors"></div></section>
+  <section><h2>Actuators</h2><div class="err" id="err"></div><div class="grid acts" id="actuators"></div></section>
+  <section><h2>Recent commands</h2><div class="card scroll"><table>
+    <thead><tr><th>Sim time</th><th>Actuator</th><th>State</th><th>Source</th><th>Reason</th><th>ACK</th></tr></thead>
+    <tbody id="cmds"></tbody></table></div></section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const HISTORY = 120;
+let meta = {sensors: [], labels: {}};
+let history = [];              // [{ts, values}]
+let acts = {};                 // name -> {mode, desired, confirmed, reason}
+let acked = new Set();
+let cmds = [];
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function buildSensors() {
+  $("sensors").innerHTML = meta.sensors.map(s =>
+    `<div class="card"><div class="label">${esc(s.name)} · ${esc(s.interface)}</div>
+     <div class="value" id="v-${s.name}">–<small> ${esc(s.unit)}</small></div>
+     <div class="flag" id="f-${s.name}"></div><canvas id="c-${s.name}" width="300" height="72"></canvas></div>`).join("");
+}
+
+function drawSpark(name) {
+  const cv = $("c-" + name); if (!cv) return;
+  const ctx = cv.getContext("2d"), w = cv.width, h = cv.height;
+  const ys = history.map(p => p.values[name]); ctx.clearRect(0, 0, w, h);
+  if (ys.length < 2) return;
+  const lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || 1;
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+  ctx.lineWidth = 2; ctx.beginPath();
+  ys.forEach((y, i) => { const px = i / (ys.length - 1) * w, py = h - 4 - (y - lo) / span * (h - 8); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+  ctx.stroke();
+}
+
+function renderSample(s) {
+  if (!s) return;
+  $("sim-time").textContent = "sim time " + s.ts.replace("T", " ");
+  for (const sen of meta.sensors) {
+    const el = $("v-" + sen.name); if (!el) continue;
+    el.firstChild.textContent = s.values[sen.name];
+    const q = s.quality[sen.name];
+    $("f-" + sen.name).textContent = q && q !== "ok" ? q.replace("_", " ") : "";
+    drawSpark(sen.name);
+  }
+}
+
+function renderActuators() {
+  $("actuators").innerHTML = Object.entries(acts).map(([name, a]) => {
+    const st = a.confirmed ?? "?";
+    const pending = a.desired && a.confirmed !== a.desired ? ` → ${a.desired} pending` : "";
+    return `<div class="card"><div class="row"><span>${esc(meta.labels[name] || name)}</span>
+      <span class="state ${st}">${st}<span class="label">${pending}</span></span></div>
+      <div class="label">mode: ${a.mode}${a.mode === "manual" && a.override_until ? " until " + new Date(a.override_until * 1000).toLocaleTimeString() : ""}</div>
+      <div class="btns">
+        <button data-act="${name}" data-do="ON">Force ON</button>
+        <button data-act="${name}" data-do="OFF">Force OFF</button>
+        <button data-act="${name}" data-do="auto" class="auto ${a.mode === "auto" ? "active" : ""}">Auto</button>
+      </div><div class="reason">${esc(a.reason)}</div></div>`;
+  }).join("");
+}
+
+function renderCmds() {
+  $("cmds").innerHTML = cmds.slice(0, 15).map(c =>
+    `<tr><td>${esc((c.sim_ts || "").replace("T", " "))}</td><td>${esc(meta.labels[c.actuator] || c.actuator)}</td>
+     <td>${esc(c.state)}</td><td>${esc(c.source)}</td><td>${esc(c.reason)}</td><td>${acked.has(c.cmd_id) ? "✓" : "…"}</td></tr>`).join("");
+}
+
+function renderNodes(nodes) {
+  $("nodes").innerHTML = Object.entries(nodes).map(([n, s]) => `<span><span class="dot ${s === "online" ? "up" : ""}"></span>${esc(n)}</span>`).join(" ");
+}
+
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  $("err").textContent = "";
+  const name = b.dataset.act, what = b.dataset.do;
+  const res = what === "auto"
+    ? await fetch("/api/override/" + name, {method: "DELETE"})
+    : await fetch("/api/override", {method: "POST", headers: {"Content-Type": "application/json"},
+                                    body: JSON.stringify({actuator: name, state: what})});
+  if (!res.ok) $("err").textContent = (await res.json()).detail || "request failed";
+});
+
+function applySnapshot(s) {
+  meta = {sensors: s.sensors, labels: s.actuator_labels};
+  $("model").textContent = "model: " + s.model;
+  acts = s.actuators; buildSensors(); renderActuators(); renderNodes(s.nodes);
+  if (s.sample) { history.push(s.sample); renderSample(s.sample); }
+}
+
+async function loadHistory() {
+  const [h, c] = await Promise.all([fetch("/api/history?limit=" + HISTORY), fetch("/api/commands?limit=15")]);
+  history = await h.json();
+  const rows = await c.json();
+  cmds = rows;
+  rows.forEach(r => r.acked_at && acked.add(r.cmd_id));
+}
+
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => { $("ws-dot").classList.add("up"); $("ws-text").textContent = "live"; };
+  ws.onclose = () => { $("ws-dot").classList.remove("up"); $("ws-text").textContent = "reconnecting"; setTimeout(boot, 2000); };
+  ws.onmessage = ev => {
+    const {type, data} = JSON.parse(ev.data);
+    if (type === "snapshot") applySnapshot(data);
+    else if (type === "sample") { history.push(data); history = history.slice(-HISTORY); renderSample(data); }
+    else if (type === "actuator") {
+      acts[data.name] = data; renderActuators();
+      if (data.confirmed) loadAcks();
+    }
+    else if (type === "command") { cmds.unshift(data); renderCmds(); }
+    else if (type === "node") { fetch("/api/state").then(r => r.json()).then(s => renderNodes(s.nodes)); }
+  };
+}
+
+async function loadAcks() {
+  const rows = await (await fetch("/api/commands?limit=15")).json();
+  rows.forEach(r => r.acked_at && acked.add(r.cmd_id)); renderCmds();
+}
+
+async function boot() { await loadHistory(); connect(); renderCmds(); }
+boot();
+</script>
+</body>
+</html>
