@@ -41,8 +41,16 @@ controller:
 backend:
   host: 0.0.0.0
   port: 8000
-  db_path: data/agri.db
   window_size: 1       # MLP 6–16–8–3 uses the latest sample, no temporal window
+
+influxdb:
+  # Time-series store for samples, predictions, commands, ACKs and actuator status (see backend/db.py for the schema).
+  # These are the local demo credentials from docker-compose.yml. Override with INFLUXDB_URL / INFLUXDB_ORG /
+  # INFLUXDB_BUCKET / INFLUXDB_TOKEN; the bucket is created on first start if it does not exist.
+  url: http://localhost:8086
+  org: my-org
+  bucket: iot_agri
+  token: my-token
 
 inference:
   # Uses the bundled inference runtime and artifacts; no external model repo or TensorFlow needed.

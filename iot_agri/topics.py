@@ -37,6 +37,18 @@ def meta(site: str, node: str) -> str:
     return f"agri/{site}/node/{node}/meta"
 
 
+def gateway_control(site: str, node: str) -> str:
+    return f"agri/{site}/node/{node}/control"
+
+
+def gateway_state(site: str, node: str) -> str:
+    return f"agri/{site}/node/{node}/state"
+
+
+def state_filter(site: str) -> str:
+    return f"agri/{site}/node/+/state"
+
+
 def actuator_name(topic: str) -> str:
     """agri/<site>/actuator/<name>/<cmd|status> -> <name>"""
     return topic.split("/")[-2]

@@ -16,6 +16,8 @@ class Sample:
     values: dict[str, float]     # cleaned: one value per configured sensor
     quality: dict[str, str]      # per sensor: "ok" | "imputed_missing" | "imputed_range"
     recv_at: float = field(default_factory=time.time)
+    # How the sample was assembled (raw readings, arrival times, gateway row); feeds the dashboard's cycle trace.
+    info: dict = field(default_factory=dict, compare=False, repr=False)
 
     def to_dict(self) -> dict:
         return {"seq": self.seq, "ts": self.ts, "gateway": self.gateway, "values": self.values,
@@ -51,9 +53,12 @@ class Ingestion:
         # MQTT preserves per-publisher order, so a newer seq means older partial cycles are final.
         for old in [k for k in self._pending if k[0] == run_id and k[1] < seq]:
             self._finalize(old)
-        pend = self._pending.setdefault(key, {"ts": msg.get("ts"), "gateway": msg.get("gw", ""),
-                                              "raw": {}, "first": self._clock()})
+        now = self._clock()
+        pend = self._pending.setdefault(key, {"ts": msg.get("ts"), "gateway": msg.get("gw", ""), "raw": {},
+                                              "recv": {}, "first": now, "gw_ts": msg.get("gw_ts"),
+                                              "row": msg.get("row"), "rows": msg.get("rows")})
         pend["raw"][sensor] = msg.get("value")
+        pend["recv"][sensor] = {"t": now, "gw_ts": msg.get("gw_ts")}
         if len(pend["raw"]) == len(self.expected):
             self._finalize(key)
 
@@ -90,4 +95,9 @@ class Ingestion:
             values[name], quality[name] = value, q
         self.stats["samples"] += 1
         ts = pend["ts"] or time.strftime("%Y-%m-%dT%H:%M:%S")
-        self.on_sample(Sample(seq=key[1], ts=ts, gateway=pend["gateway"], values=values, quality=quality))
+        info = {"run_id": key[0], "row": pend["row"], "rows": pend["rows"], "gw_ts": pend["gw_ts"],
+                "raw": {n: pend["raw"].get(n) for n in self.expected}, "recv": pend["recv"],
+                "first_recv": pend["first"], "finalized_at": self._clock(), "stats": dict(self.stats),
+                "last_recv": max((r["t"] for r in pend["recv"].values()), default=pend["first"])}
+        self.on_sample(Sample(seq=key[1], ts=ts, gateway=pend["gateway"], values=values, quality=quality,
+                              info=info))

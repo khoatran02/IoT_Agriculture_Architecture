@@ -15,6 +15,9 @@ def load_config(path=None) -> dict:
         cfg["mqtt"]["host"] = host
     if port := os.environ.get("MQTT_PORT"):
         cfg["mqtt"]["port"] = int(port)
+    for key in ("url", "org", "bucket", "token"):
+        if value := os.environ.get(f"INFLUXDB_{key.upper()}"):
+            cfg["influxdb"][key] = value
     return cfg
 
 

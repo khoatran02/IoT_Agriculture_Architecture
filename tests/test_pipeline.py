@@ -1,13 +1,10 @@
-import json
-import sqlite3
-
 import pytest
 from fastapi.testclient import TestClient
 
 from iot_agri.backend.app import create_app
-from iot_agri.backend.db import Database
 from iot_agri.backend.pipeline import Pipeline
 from conftest import make_sample
+from fakes import MemoryDatabase
 
 
 class OfflineMQTT:
@@ -16,6 +13,9 @@ class OfflineMQTT:
         self.sent = []
 
     def subscribe(self, *args):
+        pass
+
+    def monitor(self, *args):
         pass
 
     def start(self):
@@ -31,6 +31,7 @@ class OfflineMQTT:
 @pytest.fixture(autouse=True)
 def transport(monkeypatch):
     monkeypatch.setattr("iot_agri.backend.pipeline.MqttNode", OfflineMQTT)
+    monkeypatch.setattr("iot_agri.backend.app.Database", MemoryDatabase)   # no InfluxDB server needed here
 
 
 def feed(pipeline, sample):
@@ -39,8 +40,7 @@ def feed(pipeline, sample):
                                       "run_id": "integration", "ts": sample.ts, "gw": sample.gateway})
 
 
-def test_api_and_websocket_expose_real_mlp_prediction(cfg, tmp_path):
-    cfg["backend"]["db_path"] = str(tmp_path / "agri.db")
+def test_api_and_websocket_expose_real_mlp_prediction(cfg):
     with TestClient(create_app(cfg)) as client:
         with client.websocket_connect("/ws") as ws:
             assert ws.receive_json()["data"]["model"] == "mlp_v1-int8"
@@ -59,22 +59,19 @@ def test_api_and_websocket_expose_real_mlp_prediction(cfg, tmp_path):
         feed(p, make_sample(seq=1, water_level=3))
         assert client.post("/api/override", json={"actuator": "irrigation_pump", "state": "ON"}).status_code == 409
         assert client.delete("/api/override/fan").status_code == 200
-    with sqlite3.connect(cfg["backend"]["db_path"]) as db:
-        row = db.execute("SELECT model, scores_json, details_json FROM predictions ORDER BY id LIMIT 1").fetchone()
-        assert row[0] == "mlp_v1-int8"
-        assert json.loads(row[1]) == pred["scores"]
-        assert json.loads(row[2]) == pred["details"]
+        sample_ref, sim_ts, stored = client.app.state.db.predictions[0]     # what the platform asked the DB to store
+        assert stored.model == "mlp_v1-int8" and stored.scores == pred["scores"] and stored.details == pred["details"]
+        assert sim_ts == pred["ts"] and sample_ref > 0
 
 
 @pytest.mark.parametrize("ttl", [0, -1, "NaN", "Infinity"])
-def test_invalid_override_ttl_is_rejected(cfg, tmp_path, ttl):
-    cfg["backend"]["db_path"] = str(tmp_path / "agri.db")
+def test_invalid_override_ttl_is_rejected(cfg, ttl):
     with TestClient(create_app(cfg)) as client:
         assert client.post("/api/override", json={"actuator": "fan", "state": "ON", "ttl_s": ttl}).status_code == 422
 
 
 def test_inference_failure_does_not_bypass_interlock(cfg):
-    db = Database(":memory:")
+    db = MemoryDatabase()
     events = []
     p = Pipeline(cfg, db, emit=lambda *event: events.append(event))
     try:
@@ -85,20 +82,11 @@ def test_inference_failure_does_not_bypass_interlock(cfg):
         st = p.snapshot()["actuators"]["irrigation_pump"]
         assert st["desired"] == "OFF" and st["mode"] == "auto"
         assert p.snapshot()["prediction"] is None
-        assert events[-1] == ("prediction", None)
+        assert [e for e in events if e[0] == "prediction"][-1] == ("prediction", None)
+        cycle = events[-1][1]
+        assert events[-1][0] == "cycle" and cycle["prediction"] is None
+        trace = {d["actuator"]: d for d in cycle["decisions"]}["irrigation_pump"]
+        assert trace["action"] == "interlock" and trace["cmd_id"] == p.node.sent[-1][1]["cmd_id"]
         assert p.node.sent[-1][1]["state"] == "OFF"
     finally:
         p.stop()
-        db.close()
-
-
-def test_existing_prediction_database_is_migrated_without_losing_rows(tmp_path):
-    path = tmp_path / "old.db"
-    with sqlite3.connect(path) as db:
-        db.execute("CREATE TABLE predictions (id INTEGER PRIMARY KEY, sample_id INTEGER, ts TEXT, "
-                   "model TEXT, outputs_json TEXT, scores_json TEXT)")
-        db.execute("INSERT INTO predictions VALUES(1,1,'before','threshold','{}','null')")
-    db = Database(path)
-    db.close()
-    with sqlite3.connect(path) as connection:
-        assert connection.execute("SELECT model,details_json FROM predictions").fetchone() == ("threshold", None)

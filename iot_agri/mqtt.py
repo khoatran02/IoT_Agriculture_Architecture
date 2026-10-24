@@ -39,7 +39,20 @@ class MqttNode:
             except Exception:
                 log.exception("handler failed for %s", msg.topic)
 
-        self.client.message_callback_add(topic_filter, wrapper)
+        self._add_subscription(topic_filter, wrapper, qos)
+
+    def monitor(self, topic_filter: str, handler, qos: int = 1) -> None:
+        """handler(topic, raw: bytes, qos: int, retain: bool): every message undecoded, for traffic inspection."""
+        def wrapper(_client, _userdata, msg):
+            try:
+                handler(msg.topic, msg.payload, msg.qos, bool(msg.retain))
+            except Exception:
+                log.exception("monitor handler failed for %s", msg.topic)
+
+        self._add_subscription(topic_filter, wrapper, qos)
+
+    def _add_subscription(self, topic_filter: str, callback, qos: int) -> None:
+        self.client.message_callback_add(topic_filter, callback)
         self._subs.append((topic_filter, qos))
         if self.client.is_connected():
             self.client.subscribe(topic_filter, qos)

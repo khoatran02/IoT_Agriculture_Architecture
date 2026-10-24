@@ -46,30 +46,52 @@ class DecisionEngine:
         self.sim_ts: str | None = None
 
     # --- inputs ------------------------------------------------------------------------------------
-    def on_sample(self, sample) -> None:
-        """Apply interlocks without depending on a successful model prediction."""
+    def on_sample(self, sample) -> dict[str, dict | None]:
+        """Apply interlocks without depending on a successful model prediction.
+
+        Returns {actuator: command sent or None} for every interlock that is active.
+        """
         self.latest_values, self.sim_ts = sample.values, sample.ts
+        forced = {}
         for name, st in self.actuators.items():
             target, reason = self._interlock(name, st.desired)
             if reason:
                 if st.mode == "manual":
                     st.mode, st.override_until = "auto", None
-                self._set_desired(st, target, "auto", reason)
+                forced[name] = self._set_desired(st, target, "auto", reason)
                 self._emit("actuator", self._view(st))
+        return forced
 
-    def on_prediction(self, sample, prediction) -> None:
-        self.on_sample(sample)
+    def on_prediction(self, sample, prediction, forced: dict | None = None) -> list[dict]:
+        """Returns one decision trace per actuator. Pass `forced` if on_sample already ran for this sample."""
+        if forced is None:
+            forced = self.on_sample(sample)
+        traces = []
         for name, st in self.actuators.items():
-            if st.mode == "manual":
-                continue
             proposed = prediction.outputs.get(name)
-            if proposed is None:
-                continue
-            target, interlock_reason = self._interlock(name, proposed)
-            if interlock_reason:
-                self._set_desired(st, target, "auto", interlock_reason)
-            elif self._dwell_ok(st):
-                self._set_desired(st, target, "auto", f"model:{prediction.model}")
+            if name in forced:        # an interlock beat the model and any manual override
+                traces.append(self._trace(st, proposed, "interlock", forced[name]))
+            elif st.mode == "manual":
+                traces.append(self._trace(st, proposed, "manual"))
+            elif proposed is None:
+                traces.append(self._trace(st, None, "no-model"))
+            else:
+                dwell = self._dwell_info(st)
+                if not dwell["ok"] and proposed != st.desired:
+                    traces.append(self._trace(st, proposed, "held", dwell=dwell))
+                elif not dwell["ok"]:
+                    traces.append(self._trace(st, proposed, "unchanged", dwell=dwell))
+                else:
+                    cmd = self._set_desired(st, proposed, "auto", f"model:{prediction.model}")
+                    traces.append(self._trace(st, proposed, "sent" if cmd else "unchanged", cmd, dwell))
+        return traces
+
+    def on_no_prediction(self, sample, forced: dict | None = None) -> list[dict]:
+        """Model failed: only interlocks act. Returns the same per-actuator traces as on_prediction."""
+        if forced is None:
+            forced = self.on_sample(sample)
+        return [self._trace(st, None, "interlock" if name in forced else "no-model", forced.get(name))
+                for name, st in self.actuators.items()]
 
     def on_status(self, name: str, state: str, cmd_id: str | None, ok: bool = True) -> None:
         st = self.actuators.get(name)
@@ -131,18 +153,55 @@ class DecisionEngine:
                                       f"{rule['min'] if below else rule['max']}"
         return proposed, None
 
-    def _dwell_ok(self, st: ActuatorState) -> bool:
+    def _dwell_info(self, st: ActuatorState) -> dict:
         if st.last_change_sim is None or self.sim_ts is None:
-            return True
+            return {"ok": True, "elapsed_min": None, "min": self.min_dwell}
         elapsed = _minutes_between(st.last_change_sim, self.sim_ts)
-        return elapsed < 0 or elapsed >= self.min_dwell   # negative = dataset looped around
+        # negative elapsed = the dataset looped around
+        return {"ok": elapsed < 0 or elapsed >= self.min_dwell, "elapsed_min": elapsed, "min": self.min_dwell}
 
-    def _set_desired(self, st: ActuatorState, target: str, source: str, reason: str) -> None:
+    def _dwell_ok(self, st: ActuatorState) -> bool:
+        return self._dwell_info(st)["ok"]
+
+    def _set_desired(self, st: ActuatorState, target: str, source: str, reason: str) -> dict | None:
+        """Returns the command it sent, or None if the actuator was already commanded to `target`."""
         st.desired, st.reason = target, reason
         if target != st.last_sent:
-            self._send(st, target, source, reason)
+            return self._send(st, target, source, reason)
+        return None
 
-    def _send(self, st: ActuatorState, state: str, source: str, reason: str) -> None:
+    def interlock_view(self, name: str) -> list[dict]:
+        """Every interlock guarding `name` with the value it is checking now, tripped or not."""
+        out = []
+        for rule in self.interlocks:
+            if rule["actuator"] != name:
+                continue
+            value = self.latest_values.get(rule["sensor"])
+            tripped = value is not None and (("min" in rule and value < rule["min"])
+                                             or ("max" in rule and value > rule["max"]))
+            bounds = []
+            if "min" in rule:
+                bounds.append(f"{rule['sensor']} >= {rule['min']:g}")
+            if "max" in rule:
+                bounds.append(f"{rule['sensor']} <= {rule['max']:g}")
+            out.append({"rule": " and ".join(bounds), "force": rule["force"], "sensor": rule["sensor"],
+                        "value": value, "tripped": bool(tripped), "note": rule.get("note", "")})
+        return out
+
+    def _trace(self, st: ActuatorState, proposed, action: str, cmd: dict | None = None,
+               dwell: dict | None = None) -> dict:
+        """What the engine did for one actuator this cycle:
+        interlock | manual | held (min dwell) | sent | unchanged | no-model."""
+        return {"actuator": st.name, "mode": st.mode, "proposed": proposed, "action": action,
+                "interlocks": self.interlock_view(st.name), "dwell": dwell, "desired": st.desired,
+                "reason": st.reason, "cmd_id": cmd["cmd_id"] if cmd else None}
+
+    def describe(self) -> dict:
+        return {"priority": ["interlock", "manual override", "model"], "min_dwell_minutes": self.min_dwell,
+                "ack_timeout_s": self.ack_timeout, "override_ttl_s": self.override_ttl,
+                "interlocks": [dict(r) for r in self.interlocks]}
+
+    def _send(self, st: ActuatorState, state: str, source: str, reason: str) -> dict:
         cmd = {"cmd_id": uuid.uuid4().hex[:12], "actuator": st.name, "state": state, "source": source,
                "reason": reason, "ts": self._clock()}
         if st.last_sent != state:
@@ -154,6 +213,7 @@ class DecisionEngine:
         log.info("cmd %s: %s -> %s (%s: %s)", cmd["cmd_id"], st.name, state, source, reason)
         self._publish(st.name, cmd)
         self._emit("command", {**cmd, "sim_ts": self.sim_ts})
+        return cmd
 
     def _view(self, st: ActuatorState) -> dict:
         return {"name": st.name, "mode": st.mode, "desired": st.desired, "confirmed": st.confirmed,

@@ -7,3 +7,32 @@ services:
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.7.12
+    container_name: agri-influxdb
+    ports:
+      - "127.0.0.1:${INFLUXDB_PORT:-8086}:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    environment:
+      # Local demo credentials, applied only when the volume is empty. Change them before exposing the port.
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD:-admin-password-123}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-my-org}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-iot_agri}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-my-token}
+      DOCKER_INFLUXDB_INIT_RETENTION: "0"      # keep everything: the platform is also the history of what it did
+    healthcheck:
+      test: ["CMD", "influx", "ping", "--host", "http://localhost:8086"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
+  influxdb-config:

@@ -28,9 +28,11 @@ class ActuatorController:
         self.node.on_connect(self._report_all)
         self._stop = threading.Event()
 
-    def _status(self, name: str, cmd_id=None, ok=True, error=None) -> None:
-        payload = {"actuator": name, "state": self.relays[name].state, "cmd_id": cmd_id, "ok": ok,
-                   "ts": time.time()}
+    def _status(self, name: str, cmd_id=None, ok=True, error=None, **timing) -> None:
+        relay = self.relays[name]
+        payload = {"actuator": name, "state": relay.state, "gpio": relay.gpio,
+                   "level": "HIGH" if relay.state == "ON" else "LOW", "cmd_id": cmd_id, "ok": ok,
+                   "ts": time.time(), **timing}
         if error:
             payload["error"] = error
         # Retained so a restarted backend learns the physical state immediately.
@@ -42,6 +44,9 @@ class ActuatorController:
 
     def _on_command(self, topic: str, msg: dict) -> None:
         name, cmd_id = topics.actuator_name(topic), msg.get("cmd_id")
+        recv_ts = time.time()
+        # An ACK carries the command's own timestamp plus ours, so the backend can time every hop.
+        timing = {"cmd_ts": msg.get("ts"), "recv_ts": recv_ts}
         if name not in self.relays:
             log.warning("command for unknown actuator %r", name)
             return
@@ -49,11 +54,11 @@ class ActuatorController:
         try:
             changed = self.relays[name].set(msg.get("state"))
         except ValueError as e:
-            self._status(name, cmd_id, ok=False, error=str(e))
+            self._status(name, cmd_id, ok=False, error=str(e), applied_ts=time.time(), **timing)
             return
         log.info("cmd %s: %s -> %s (%s%s)", cmd_id, name, msg["state"], msg.get("source", "?"),
                  "" if changed else ", already in state")
-        self._status(name, cmd_id)  # status doubles as the ACK for cmd_id
+        self._status(name, cmd_id, applied_ts=time.time(), **timing)  # status doubles as the ACK for cmd_id
 
     def run(self) -> None:
         self.node.start()
